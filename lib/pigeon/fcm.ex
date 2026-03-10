@@ -104,20 +104,17 @@ defmodule Pigeon.FCM do
   for more details.
   """
 
-  @max_retries 3
-
   defstruct config: nil,
             queue: Pigeon.HTTP.RequestQueue.new(),
-            retries: @max_retries,
             socket: nil
 
   @behaviour Pigeon.Adapter
 
   import Pigeon.Tasks, only: [process_on_response: 1]
 
-  alias Pigeon.Configurable
-  alias Pigeon.FCM.{Config, Error}
-  alias Pigeon.HTTP.{Request, RequestQueue}
+  alias Pigeon.{AdapterHelper, Configurable}
+  alias Pigeon.FCM.Error
+  alias Pigeon.HTTP.Request
 
   require Logger
 
@@ -129,7 +126,7 @@ defmodule Pigeon.FCM do
 
     state = %__MODULE__{config: config}
 
-    case connect_socket(config) do
+    case AdapterHelper.connect_socket(config) do
       {:ok, socket} ->
         Configurable.schedule_ping(config)
         {:ok, %{state | socket: socket}}
@@ -141,18 +138,7 @@ defmodule Pigeon.FCM do
 
   @impl Pigeon.Adapter
   def handle_push(notification, state) do
-    %{socket: socket} = state
-
-    Mint.HTTP.open?(socket)
-    |> if do
-      # if the the connection reports, the request might still report an error
-      # There might be a race condition between requesting the socket state and doing the action request
-      do_request(notification, state)
-    else
-      requeue_notification(notification)
-
-      reconnect_or_exit(state)
-    end
+    AdapterHelper.handle_push(notification, state, &request_path/2)
   end
 
   @impl Pigeon.Adapter
@@ -164,7 +150,7 @@ defmodule Pigeon.FCM do
   end
 
   def handle_info({:closed, _}, state) do
-    reconnect_or_exit(state)
+    AdapterHelper.reconnect_or_exit(state)
   end
 
   def handle_info(msg, state) do
@@ -190,76 +176,7 @@ defmodule Pigeon.FCM do
     end
   end
 
-  defp do_request(notification, state) do
-    %{config: config, queue: queue, socket: socket} = state
-    headers = Configurable.push_headers(config, notification, [])
-    payload = Configurable.push_payload(config, notification, [])
-    method = "POST"
-    path = "/v1/projects/#{config.project_id}/messages:send"
-
-    Mint.HTTP.request(socket, method, path, headers, payload)
-    |> case do
-      {:ok, socket, ref} ->
-        new_q = RequestQueue.add(queue, ref, notification)
-
-        state =
-          state
-          |> Map.put(:socket, socket)
-          |> Map.put(:queue, new_q)
-
-        {:noreply, state}
-
-      _ ->
-        requeue_notification(notification)
-
-        # nothing changes, request failed, notification is requeued
-        # if socket got closed the next request will attempt to reopen it
-        {:noreply, state}
-    end
-  end
-
-  @spec connect_socket(Config.t()) :: {:ok, Mint.HTTP2.t()} | {:error, term()}
-  defp connect_socket(config), do: connect_socket(config, @max_retries)
-
-  defp connect_socket(config, tries) do
-    case Configurable.connect(config) do
-      {:ok, socket} ->
-        {:ok, socket}
-
-      {:error, reason} ->
-        if tries > 0 do
-          connect_socket(config, tries - 1)
-        else
-          {:error, reason}
-        end
-    end
-  end
-
-  defp requeue_notification(%{__meta__: %{impl: impl}} = notification)
-       when is_atom(impl) and not is_nil(impl) do
-    opts = notification.__meta__ |> Map.from_struct() |> Map.to_list()
-
-    apply(impl, :push, [
-      notification,
-      opts
-    ])
-  end
-
-  defp requeue_notification(_notification) do
-    # Do nothing, push is sync, there is no retry in this case
-    :ok
-  end
-
-  defp reconnect_or_exit(state) do
-    %{config: config} = state
-
-    case connect_socket(config) do
-      {:ok, socket} ->
-        Configurable.schedule_ping(config)
-        {:noreply, %{state | socket: socket}}
-
-      {:error, reason} ->
-        {:stop, reason}
-    end
+  defp request_path(config, _notification) do
+    {"POST", "/v1/projects/#{config.project_id}/messages:send"}
   end
 end
