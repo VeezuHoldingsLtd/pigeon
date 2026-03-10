@@ -4,7 +4,8 @@ defmodule Pigeon.FCM.Config do
   defstruct auth: nil,
             project_id: nil,
             uri: ~c"fcm.googleapis.com",
-            port: 443
+            port: 443,
+            retries: 3
 
   @typedoc """
   The name, or custom module, of your Goth implementation, e.g. `YourApp.Goth`.
@@ -17,7 +18,8 @@ defmodule Pigeon.FCM.Config do
           auth: nil | auth(),
           project_id: nil | String.t(),
           uri: String.t(),
-          port: pos_integer()
+          port: pos_integer(),
+          retries: pos_integer()
         }
 
   @doc ~S"""
@@ -43,7 +45,8 @@ defmodule Pigeon.FCM.Config do
       auth: opts[:auth],
       port: Map.get(opts, :port, 443),
       project_id: opts[:project_id],
-      uri: Map.get(opts, :uri, ~c"fcm.googleapis.com")
+      uri: Map.get(opts, :uri, ~c"fcm.googleapis.com"),
+      retries: Map.get(opts, :retries, 3)
     }
   end
 end

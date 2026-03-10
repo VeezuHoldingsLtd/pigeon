@@ -67,6 +67,7 @@ defmodule Pigeon do
   """
   @type push_opts :: [
           on_response: on_response() | nil,
+          impl: atom() | nil,
           timeout: non_neg_integer()
         ]
 
@@ -108,7 +109,15 @@ defmodule Pigeon do
   def push(pid, notification, opts) do
     if Keyword.has_key?(opts, :on_response) do
       on_response = Keyword.get(opts, :on_response)
-      notification = put_on_response(notification, on_response)
+      impl = Keyword.get(opts, :impl)
+      current_try = Keyword.get(opts, :current_try)
+
+      notification =
+        notification
+        |> put_on_response(on_response)
+        |> put_impl(impl)
+        |> put_current_try(current_try)
+
       push_async(pid, notification)
     else
       timeout = Keyword.get(opts, :timeout, @default_timeout)
@@ -142,8 +151,24 @@ defmodule Pigeon do
     end
   end
 
+  defp put_on_response(notification, nil), do: notification
+
   defp put_on_response(notification, on_response) do
     meta = %{notification.__meta__ | on_response: on_response}
+    %{notification | __meta__: meta}
+  end
+
+  defp put_impl(notification, nil), do: notification
+
+  defp put_impl(notification, impl) do
+    meta = %{notification.__meta__ | impl: impl}
+    %{notification | __meta__: meta}
+  end
+
+  defp put_current_try(notification, nil), do: notification
+
+  defp put_current_try(notification, current_try) do
+    meta = %{notification.__meta__ | current_try: current_try}
     %{notification | __meta__: meta}
   end
 end

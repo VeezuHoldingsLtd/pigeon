@@ -82,6 +82,7 @@ defmodule Pigeon.Dispatcher do
   defmacro __using__(opts) do
     quote bind_quoted: [opts: opts] do
       @otp_app opts[:otp_app]
+      @retries opts[:retries] || 3
 
       def child_spec(opts \\ []) do
         config_opts = Application.get_env(@otp_app, __MODULE__, [])
@@ -102,7 +103,45 @@ defmodule Pigeon.Dispatcher do
       Sends a push notification with given options.
       """
       def push(notification, opts \\ []) do
-        Pigeon.push(__MODULE__, notification, opts)
+        opts = Keyword.merge(opts, impl: __MODULE__)
+        current_try = Keyword.get(opts, :current_try, 0)
+
+        case {current_try, @retries} do
+          {max_tries, max_tries} ->
+            notification
+            |> Map.put(:response, :failed_after_retries)
+            |> Pigeon.Tasks.process_on_response()
+
+          {0, _} ->
+            opts = Keyword.put(opts, :current_try, 1)
+
+            Pigeon.push(__MODULE__, notification, opts)
+
+          {current_try, retries} when current_try < retries ->
+            opts = Keyword.put(opts, :current_try, current_try + 1)
+
+            backoff = backoff(current_try)
+
+            Process.send_after(
+              Pigeon.BackoffWorker,
+              {:push, __MODULE__, notification, opts},
+              backoff
+            )
+
+          _ ->
+            Pigeon.push(__MODULE__, notification, opts)
+        end
+      end
+
+      defp backoff(current_try) do
+        # Exponential backoff with jitter
+        # 1 second base delay
+        base_delay = 1000
+        exponential_delay = base_delay * :math.pow(2, current_try)
+        # Add jitter: random value between 0 and exponential_delay
+        jitter = :rand.uniform() * exponential_delay
+
+        trunc(exponential_delay + jitter)
       end
     end
   end
@@ -122,6 +161,10 @@ defmodule Pigeon.Dispatcher do
       for index <- 1..(opts[:pool_size] || Pigeon.default_pool_size()) do
         Supervisor.child_spec({Pigeon.DispatcherWorker, opts}, id: index)
       end
+
+    children = [
+      Pigeon.BackoffWorker | children
+    ]
 
     Supervisor.init(children, strategy: :one_for_one)
   end
