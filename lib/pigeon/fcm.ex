@@ -104,20 +104,17 @@ defmodule Pigeon.FCM do
   for more details.
   """
 
-  @max_retries 3
-
   defstruct config: nil,
             queue: Pigeon.HTTP.RequestQueue.new(),
-            retries: @max_retries,
             socket: nil
 
   @behaviour Pigeon.Adapter
 
   import Pigeon.Tasks, only: [process_on_response: 1]
 
-  alias Pigeon.Configurable
-  alias Pigeon.FCM.{Config, Error}
-  alias Pigeon.HTTP.{Request, RequestQueue}
+  alias Pigeon.{AdapterHelper, Configurable}
+  alias Pigeon.FCM.Error
+  alias Pigeon.HTTP.Request
 
   require Logger
 
@@ -129,7 +126,7 @@ defmodule Pigeon.FCM do
 
     state = %__MODULE__{config: config}
 
-    case connect_socket(config) do
+    case AdapterHelper.connect_socket(config) do
       {:ok, socket} ->
         Configurable.schedule_ping(config)
         {:ok, %{state | socket: socket}}
@@ -141,23 +138,7 @@ defmodule Pigeon.FCM do
 
   @impl Pigeon.Adapter
   def handle_push(notification, state) do
-    %{config: config, queue: queue, socket: socket} = state
-    headers = Configurable.push_headers(config, notification, [])
-    payload = Configurable.push_payload(config, notification, [])
-    method = "POST"
-    path = "/v1/projects/#{config.project_id}/messages:send"
-
-    {:ok, socket, ref} =
-      Mint.HTTP.request(socket, method, path, headers, payload)
-
-    new_q = RequestQueue.add(queue, ref, notification)
-
-    state =
-      state
-      |> Map.put(:socket, socket)
-      |> Map.put(:queue, new_q)
-
-    {:noreply, state}
+    AdapterHelper.handle_push(notification, state, &request_path/2)
   end
 
   @impl Pigeon.Adapter
@@ -168,15 +149,8 @@ defmodule Pigeon.FCM do
     {:noreply, %{state | socket: socket}}
   end
 
-  def handle_info({:closed, _}, %{config: config} = state) do
-    case connect_socket(config) do
-      {:ok, socket} ->
-        Configurable.schedule_ping(config)
-        {:noreply, %{state | socket: socket}}
-
-      {:error, reason} ->
-        {:stop, reason}
-    end
+  def handle_info({:closed, _}, state) do
+    AdapterHelper.reconnect_or_exit(state)
   end
 
   def handle_info(msg, state) do
@@ -202,20 +176,7 @@ defmodule Pigeon.FCM do
     end
   end
 
-  @spec connect_socket(Config.t()) :: {:ok, Mint.HTTP2.t()} | {:error, term()}
-  defp connect_socket(config), do: connect_socket(config, @max_retries)
-
-  defp connect_socket(config, tries) do
-    case Configurable.connect(config) do
-      {:ok, socket} ->
-        {:ok, socket}
-
-      {:error, reason} ->
-        if tries > 0 do
-          connect_socket(config, tries - 1)
-        else
-          {:error, reason}
-        end
-    end
+  defp request_path(config, _notification) do
+    {"POST", "/v1/projects/#{config.project_id}/messages:send"}
   end
 end

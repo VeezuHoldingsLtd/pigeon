@@ -65,8 +65,8 @@ defmodule Pigeon.ADM do
 
     defp adm_opts do
       [
-        adapter: Pigeon.ADM, 
-        client_id: "client_id", 
+        adapter: Pigeon.ADM,
+        client_id: "client_id",
         client_secret: "secret"
       ]
     end
@@ -144,6 +144,7 @@ defmodule Pigeon.ADM do
   @behaviour Pigeon.Adapter
 
   import Pigeon.Tasks, only: [process_on_response: 1]
+  alias Pigeon.AdapterHelper
   alias Pigeon.ADM.{Config, ResultParser, Token}
   alias Pigeon.HTTP.RequestQueue
   require Logger
@@ -157,37 +158,53 @@ defmodule Pigeon.ADM do
 
     Config.validate!(config)
 
-    {:ok, socket} = Mint.HTTP.connect(:https, "api.amazon.com", 443)
-
-    {:ok,
-     %{
-       config: config,
-       access_token: nil,
-       access_token_refreshed_datetime_erl: {{0, 0, 0}, {0, 0, 0}},
-       access_token_expiration_seconds: 0,
-       access_token_type: nil,
-       socket: socket,
-       queue: RequestQueue.new()
-     }}
-  end
-
-  @impl true
-  def handle_push(notification, state) do
-    case refresh_access_token_if_needed(state) do
-      {:ok, state} ->
-        {:ok, state} = do_push(notification, state)
-        {:noreply, state}
+    case connect_socket() do
+      {:ok, socket} ->
+        {:ok,
+         %{
+           config: config,
+           access_token: nil,
+           access_token_refreshed_datetime_erl: {{0, 0, 0}, {0, 0, 0}},
+           access_token_expiration_seconds: 0,
+           access_token_type: nil,
+           socket: socket,
+           queue: RequestQueue.new()
+         }}
 
       {:error, reason} ->
-        notification
-        |> Map.put(:response, reason)
-        |> process_on_response()
-
-        {:noreply, state}
+        {:stop, reason}
     end
   end
 
   @impl true
+  def handle_push(notification, state) do
+    %{socket: socket} = state
+
+    Mint.HTTP.open?(socket)
+    |> if do
+      case refresh_access_token_if_needed(state) do
+        {:ok, state} ->
+          do_push(notification, state)
+
+        {:error, reason} ->
+          notification
+          |> Map.put(:response, reason)
+          |> process_on_response()
+
+          {:noreply, state}
+      end
+    else
+      AdapterHelper.requeue_notification(notification)
+
+      reconnect_or_exit(state)
+    end
+  end
+
+  @impl true
+  def handle_info({:closed, _}, state) do
+    reconnect_or_exit(state)
+  end
+
   def handle_info(msg, state) do
     Pigeon.HTTP.handle_info(msg, state, &process_response/1)
   end
@@ -300,12 +317,43 @@ defmodule Pigeon.ADM do
     method = "POST"
     path = adm_path(notification.registration_id)
 
-    {:ok, socket, ref} =
-      Mint.HTTP.request(socket, method, path, headers, body)
+    Mint.HTTP.request(socket, method, path, headers, body)
+    |> case do
+      {:ok, socket, ref} ->
+        new_q = RequestQueue.add(queue, ref, notification)
+        {:noreply, %{state | queue: new_q, socket: socket}}
 
-    new_q = RequestQueue.add(queue, ref, notification)
+      _ ->
+        AdapterHelper.requeue_notification(notification)
 
-    {:ok, %{state | queue: new_q, socket: socket}}
+        {:noreply, state}
+    end
+  end
+
+  @max_retries 3
+
+  defp connect_socket(retries \\ @max_retries) do
+    case Mint.HTTP.connect(:https, "api.amazon.com", 443) do
+      {:ok, socket} ->
+        {:ok, socket}
+
+      {:error, reason} ->
+        if retries > 0 do
+          connect_socket(retries - 1)
+        else
+          {:error, reason}
+        end
+    end
+  end
+
+  defp reconnect_or_exit(state) do
+    case connect_socket() do
+      {:ok, socket} ->
+        {:noreply, %{state | socket: socket}}
+
+      {:error, reason} ->
+        {:stop, reason}
+    end
   end
 
   @spec adm_path(String.t()) :: String.t()

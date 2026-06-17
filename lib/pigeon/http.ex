@@ -26,6 +26,20 @@ defmodule Pigeon.HTTP do
 
         {:noreply, %{state | queue: queue, socket: socket}}
 
+      {:error, socket, %Mint.HTTPError{reason: {:server_closed_connection, _}},
+       _responses} ->
+        send(self(), {:closed, socket})
+        {:noreply, state}
+
+      {
+        :error,
+        socket,
+        %Mint.HTTPError{reason: {:server_closed_connection, _, _}},
+        _responses
+      } ->
+        send(self(), {:closed, socket})
+        {:noreply, state}
+
       {:error, socket, error, _responses} ->
         error |> inspect(pretty: true) |> Logger.error()
         {:noreply, %{state | socket: socket}}

@@ -164,9 +164,9 @@ defmodule Pigeon.APNS do
 
   import Pigeon.Tasks, only: [process_on_response: 1]
 
-  alias Pigeon.Configurable
+  alias Pigeon.{AdapterHelper, Configurable}
   alias Pigeon.APNS.{ConfigParser, Error}
-  alias Pigeon.HTTP.{Request, RequestQueue}
+  alias Pigeon.HTTP.Request
 
   require Logger
 
@@ -177,7 +177,7 @@ defmodule Pigeon.APNS do
 
     state = %__MODULE__{config: config}
 
-    case Configurable.connect(config) do
+    case AdapterHelper.connect_socket(config) do
       {:ok, socket} ->
         Configurable.schedule_ping(config)
         {:ok, %{state | socket: socket}}
@@ -189,24 +189,7 @@ defmodule Pigeon.APNS do
 
   @impl true
   def handle_push(notification, state) do
-    %{config: config, queue: queue, socket: socket} = state
-
-    headers = Configurable.push_headers(config, notification, [])
-    payload = Configurable.push_payload(config, notification, [])
-    method = "POST"
-    path = "/3/device/#{notification.device_token}"
-
-    {:ok, socket, ref} =
-      Mint.HTTP.request(socket, method, path, headers, payload)
-
-    new_q = RequestQueue.add(queue, ref, notification)
-
-    state =
-      state
-      |> Map.put(:socket, socket)
-      |> Map.put(:queue, new_q)
-
-    {:noreply, state}
+    AdapterHelper.handle_push(notification, state, &request_path/2)
   end
 
   @impl true
@@ -217,15 +200,8 @@ defmodule Pigeon.APNS do
     {:noreply, %{state | socket: socket}}
   end
 
-  def handle_info({:closed, _}, %{config: config} = state) do
-    case Configurable.connect(config) do
-      {:ok, socket} ->
-        Configurable.schedule_ping(config)
-        {:noreply, %{state | socket: socket}}
-
-      {:error, reason} ->
-        {:stop, reason}
-    end
+  def handle_info({:closed, _}, state) do
+    AdapterHelper.reconnect_or_exit(state)
   end
 
   def handle_info(msg, state) do
@@ -256,5 +232,9 @@ defmodule Pigeon.APNS do
       {^key, val} -> val
       nil -> nil
     end
+  end
+
+  defp request_path(_config, notification) do
+    {"POST", "/3/device/#{notification.device_token}"}
   end
 end
