@@ -107,16 +107,13 @@ defmodule Pigeon do
   end
 
   def push(pid, notification, opts) do
+    impl = Keyword.get(opts, :impl)
+    current_try = Keyword.get(opts, :current_try)
+    notification |> put_impl(impl) |> put_current_try(current_try)
+
     if Keyword.has_key?(opts, :on_response) do
       on_response = Keyword.get(opts, :on_response)
-      impl = Keyword.get(opts, :impl)
-      current_try = Keyword.get(opts, :current_try)
-
-      notification =
-        notification
-        |> put_on_response(on_response)
-        |> put_impl(impl)
-        |> put_current_try(current_try)
+      notification = put_on_response(notification, on_response)
 
       push_async(pid, notification)
     else
