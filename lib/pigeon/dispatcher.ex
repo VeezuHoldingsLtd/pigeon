@@ -162,10 +162,6 @@ defmodule Pigeon.Dispatcher do
         Supervisor.child_spec({Pigeon.DispatcherWorker, opts}, id: index)
       end
 
-    children = [
-      Pigeon.BackoffWorker | children
-    ]
-
     Supervisor.init(children, strategy: :one_for_one)
   end
 end

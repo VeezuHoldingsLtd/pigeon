@@ -9,7 +9,8 @@ defmodule Pigeon.Application do
     children = [
       Pigeon.Registry,
       {APNS.Token, %{}},
-      {Task.Supervisor, name: Pigeon.Tasks}
+      {Task.Supervisor, name: Pigeon.Tasks},
+      Pigeon.BackoffWorker
     ]
 
     opts = [strategy: :one_for_one, name: :pigeon]
