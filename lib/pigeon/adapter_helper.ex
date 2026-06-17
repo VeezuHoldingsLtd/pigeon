@@ -85,7 +85,7 @@ defmodule Pigeon.AdapterHelper do
         {:noreply, %{state | socket: socket}}
 
       {:error, reason} ->
-        {:stop, reason}
+        {:stop, reason, state}
     end
   end
 end
