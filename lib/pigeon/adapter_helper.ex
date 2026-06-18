@@ -88,4 +88,14 @@ defmodule Pigeon.AdapterHelper do
         {:stop, reason, state}
     end
   end
+
+  def handle_ping(%{socket: socket, config: config} = state) do
+    with true <- Mint.HTTP.open?(socket),
+         {:ok, socket, _ref} <- Mint.HTTP2.ping(socket) do
+      Configurable.schedule_ping(config)
+      {:noreply, %{state | socket: socket}}
+    else
+      _ -> reconnect_or_exit(state)
+    end
+  end
 end
