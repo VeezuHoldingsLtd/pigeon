@@ -193,11 +193,8 @@ defmodule Pigeon.APNS do
   end
 
   @impl true
-  def handle_info(:ping, %{socket: socket} = state) do
-    {:ok, socket, _ref} = Mint.HTTP2.ping(socket)
-    Configurable.schedule_ping(state.config)
-
-    {:noreply, %{state | socket: socket}}
+  def handle_info(:ping, state) do
+    AdapterHelper.handle_ping(state)
   end
 
   def handle_info({:closed, _}, state) do

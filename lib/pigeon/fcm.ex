@@ -142,11 +142,8 @@ defmodule Pigeon.FCM do
   end
 
   @impl Pigeon.Adapter
-  def handle_info(:ping, %{config: config, socket: socket} = state) do
-    {:ok, socket, _ref} = Mint.HTTP2.ping(socket)
-    Configurable.schedule_ping(config)
-
-    {:noreply, %{state | socket: socket}}
+  def handle_info(:ping, state) do
+    AdapterHelper.handle_ping(state)
   end
 
   def handle_info({:closed, _}, state) do
