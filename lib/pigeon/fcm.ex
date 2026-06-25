@@ -116,8 +116,6 @@ defmodule Pigeon.FCM do
   alias Pigeon.FCM.Error
   alias Pigeon.HTTP.Request
 
-  require Logger
-
   @impl Pigeon.Adapter
   def init(opts) do
     config = Pigeon.FCM.Config.new(opts)

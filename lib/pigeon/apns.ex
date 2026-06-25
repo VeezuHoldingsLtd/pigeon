@@ -168,8 +168,6 @@ defmodule Pigeon.APNS do
   alias Pigeon.APNS.{ConfigParser, Error}
   alias Pigeon.HTTP.Request
 
-  require Logger
-
   @impl true
   def init(opts) do
     config = ConfigParser.parse(opts)

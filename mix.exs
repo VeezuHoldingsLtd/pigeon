@@ -19,12 +19,6 @@ defmodule Pigeon.Mixfile do
       elixirc_paths: elixirc_paths(Mix.env()),
       name: @name,
       package: package(),
-      preferred_cli_env: [
-        coveralls: :test,
-        "coveralls.detail": :test,
-        "coveralls.post": :test,
-        "coveralls.html": :test
-      ],
       source_url: @source_url,
       start_permanent: Mix.env() == :prod,
       test_coverage: [tool: ExCoveralls],
@@ -40,6 +34,17 @@ defmodule Pigeon.Mixfile do
     [
       extra_applications: [:logger],
       mod: {Pigeon.Application, []}
+    ]
+  end
+
+  def cli do
+    [
+      preferred_cli_env: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test
+      ]
     ]
   end
 
