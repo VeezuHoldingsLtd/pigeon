@@ -41,7 +41,7 @@ defmodule Pigeon.HTTP do
         {:noreply, state}
 
       {:error, socket, error, _responses} ->
-        error |> inspect(pretty: true) |> Logger.error()
+        error |> inspect(pretty: true) |> Logger.warning()
         {:noreply, %{state | socket: socket}}
     end
   end
