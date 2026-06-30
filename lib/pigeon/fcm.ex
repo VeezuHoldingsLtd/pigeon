@@ -154,19 +154,23 @@ defmodule Pigeon.FCM do
 
   @spec handle_response(Request.t()) :: :ok
   def handle_response(%{body: body, notification: notif}) do
-    body
-    |> Pigeon.json_library().decode!()
-    |> case do
-      %{"name" => name} ->
+    case Pigeon.json_library().decode(body) do
+      {:ok, %{"name" => name}} ->
         notif
         |> Map.put(:name, name)
         |> Map.put(:response, :success)
         |> process_on_response()
 
-      %{"error" => error} ->
+      {:ok, %{"error" => error}} ->
         notif
         |> Map.put(:error, error)
         |> Map.put(:response, Error.parse(error))
+        |> process_on_response()
+
+      {:error, reason} ->
+        notif
+        |> Map.put(:error, %{reason: reason, body: body})
+        |> Map.put(:response, :invalid_json)
         |> process_on_response()
     end
   end

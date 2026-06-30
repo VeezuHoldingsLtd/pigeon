@@ -111,19 +111,23 @@ defimpl Pigeon.Configurable, for: Pigeon.FCM.Config do
   end
 
   def handle_end_stream(_config, %{error: nil} = stream, notif) do
-    stream.body
-    |> Pigeon.json_library().decode!()
-    |> case do
-      %{"name" => name} ->
+    case Pigeon.json_library().decode(stream.body) do
+      {:ok, %{"name" => name}} ->
         notif
         |> Map.put(:name, name)
         |> Map.put(:response, :success)
         |> process_on_response()
 
-      %{"error" => error} ->
+      {:ok, %{"error" => error}} ->
         notif
         |> Map.put(:error, error)
         |> Map.put(:response, Error.parse(error))
+        |> process_on_response()
+
+      {:error, reason} ->
+        notif
+        |> Map.put(:error, %{reason: reason, body: stream.body})
+        |> Map.put(:response, :invalid_json)
         |> process_on_response()
     end
   end

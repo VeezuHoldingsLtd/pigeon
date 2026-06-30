@@ -34,6 +34,7 @@ defmodule Pigeon.FCM.Notification do
   @type error_response ::
           :unspecified_error
           | :invalid_argument
+          | :invalid_json
           | :unregistered
           | :sender_id_mismatch
           | :quota_exceeded
