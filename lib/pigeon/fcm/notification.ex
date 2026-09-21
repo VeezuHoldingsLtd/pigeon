@@ -58,10 +58,13 @@ defmodule Pigeon.FCM.Notification do
   Most map to the `errorCode` in the FCM v1 error details. `:permission_denied`
   and `:unauthenticated` come from the gRPC `status` when FCM rejects the
   service account itself. `:unknown_error` covers anything unrecognized.
+  `:invalid_json` means the response body was not JSON; `:error` then carries
+  the decode reason and the raw body.
   """
   @type error_response ::
           :internal
           | :invalid_argument
+          | :invalid_json
           | :permission_denied
           | :quota_exceeded
           | :sender_id_mismatch

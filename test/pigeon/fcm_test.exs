@@ -47,6 +47,31 @@ defmodule Pigeon.FCMTest do
     end
   end
 
+  describe "handle_response/1" do
+    test "returns :success for a JSON response containing a name" do
+      body = ~s({"name": "projects/example/messages/123"})
+      pid = self()
+      request = response_request(body, pid)
+
+      Pigeon.FCM.handle_response(request)
+
+      assert_receive %Notification{response: :success} = response
+      assert response.name == "projects/example/messages/123"
+    end
+
+    test "returns :invalid_json when the response body is not JSON" do
+      body = "<html><body>502 Bad Gateway</body></html>"
+      pid = self()
+      request = response_request(body, pid)
+
+      Pigeon.FCM.handle_response(request)
+
+      assert_receive %Notification{response: :invalid_json} = response
+      assert response.error.body == body
+      assert response.error.reason
+    end
+  end
+
   describe "handle_push/3" do
     test "successfully sends a valid push" do
       notification =
@@ -111,5 +136,19 @@ defmodule Pigeon.FCMTest do
       refute n.name
       assert n.response == :not_started
     end
+  end
+
+  defp response_request(body, pid) do
+    notification = Notification.new({:token, "bad_reg_id"}, %{}, @data)
+
+    notification = %{
+      notification
+      | __meta__: %{
+          notification.__meta__
+          | on_response: fn n -> send(pid, n) end
+        }
+    }
+
+    %Pigeon.HTTP.Request{body: body, notification: notification}
   end
 end
